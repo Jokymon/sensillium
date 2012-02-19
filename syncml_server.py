@@ -26,8 +26,11 @@ def get_child_text_by_name(node, child_name):
 class SyncMLCommand:
     def __init__(self, xml_node):
         self.command = xml_node.tagName
+        self.response_expected = True
         if self.command=="Final":
-            # 'Final' doesn't have any additional attributes
+            # 'Final' doesn't have any additional attributes because it isn't a
+            # real command but rather more like a flag
+            self.response_expected = False
             return
         self.cmdid   = int( get_child_text_by_name( xml_node, "CmdID" ) )
         self.meta    = {}
@@ -37,6 +40,7 @@ class SyncMLCommand:
                 if ch.childNodes[0].nodeType==ch.TEXT_NODE:
                     self.meta[ch.tagName] = ch.childNodes[0].data.strip()
         print "Command %s with meta %s" % (self.command, self.meta)
+        # TODO: parse the optional <Cred> element
 
         # Just playing a bit here
         if self.command=="Put":
@@ -68,6 +72,13 @@ class SyncMLSession:
     def __init__(self, id):
         self.id = id
 
+    def handle_message(self, syncml_message):
+        for command in syncml_message.commands:
+            self.handle_command(command)
+
+    def handle_command(self, syncml_command):
+        print syncml_command.command
+
 class SessionManager:
     """The session manager handles incoming messages and dispatches them to the
     responsible session handler which is a SyncMLSession instance. When an
@@ -75,7 +86,15 @@ class SessionManager:
     a corresponding new session handler. The session manager also takes care of
     cleaning up sessions that are finished and have no outstanding requests."""
     def __init__(self):
-        pass
+        self.sessions = {}
+
+    def handle_message(self, syncml_message):
+        if syncml_message.sessionid in self.sessions.keys():
+            session = self.sessions[syncml_message.sessionid]
+        else:
+            session = SyncMLSession( syncml_message.sessionid )
+            self.sessions[syncml_message.sessionid] = session
+        session.handle_message(syncml_message)
 
 class SyncMLRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     def do_POST(self):
@@ -85,10 +104,11 @@ class SyncMLRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         wxd.parse( recv_data )
         package = SyncMLMessage( wxd.document.childNodes[0] )
         print "Incoming Message with SessionID %u" % package.sessionid
+        self.server.sm.handle_message( package )
 
         self.send_response(200)
+        self.send_header("Connection", "close")
         self.end_headers()
-        self.log_request(200)
 
         ts = time.strftime("%Y%m%d-%H%M%S")
         if STORE_BINARY_REQUEST:
