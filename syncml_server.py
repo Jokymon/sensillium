@@ -57,11 +57,22 @@ class SyncMLCommand:
         return "Generic '%s'" % self.command
 
 class Alert(SyncMLCommand):
+    alert_codes = {
+        100: "DISPLAY",     # The data element type contains content information that should be processed and displayed through the user agent
+        200: "TWO-WAY",     # Specifies a client-initiated two-way sync
+        201: "SLOW SYNC",   # Specified a client-initiated, two-way slow sync.
+    }
+
     def parse(self, xml_node):
         SyncMLCommand.parse(self, xml_node)
+        self.alert_type = int( get_child_by_name("Data") )
 
     def __repr__(self):
-        return "Alert"
+        if self.alert_type in self.alert_codes.keys():
+            alert_type_name = self.alert_codes[self.alert_type]
+        else:
+            alert_type_name = "%u" % self.alert_type
+        return "Alert (%s)" % alert_type_name
 
 class Final(SyncMLCommand):
     # 'Final' doesn't have any additional attributes because it isn't a
