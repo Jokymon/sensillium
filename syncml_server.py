@@ -24,14 +24,12 @@ def get_child_text_by_name(node, child_name):
     return ""
 
 class SyncMLCommand:
-    def __init__(self, xml_node):
+
+    def parse(self, xml_node):
         self.command = xml_node.tagName
         self.response_expected = True
-        if self.command=="Final":
-            # 'Final' doesn't have any additional attributes because it isn't a
-            # real command but rather more like a flag
+        if get_child_by_name(xml_node, "NoResp"):
             self.response_expected = False
-            return
         self.cmdid   = int( get_child_text_by_name( xml_node, "CmdID" ) )
         self.meta    = {}
         meta = get_child_by_name(xml_node, "Meta")
@@ -55,6 +53,38 @@ class SyncMLCommand:
             devinf.write( wxd.document.toprettyxml(indent="    ") )
             devinf.close()
 
+    def __repr__(self):
+        return "Generic '%s'" % self.command
+
+class Alert(SyncMLCommand):
+    def parse(self, xml_node):
+        SyncMLCommand.parse(self, xml_node)
+
+    def __repr__(self):
+        return "Alert"
+
+class Final(SyncMLCommand):
+    # 'Final' doesn't have any additional attributes because it isn't a
+    # real command but rather more like a flag
+    def parse(self, xml_node):
+        self.command = "Final"
+        self.response_expected = False
+
+class SyncMLCommandFactory:
+    parsing_table = {
+        "Final" : Final
+    }
+
+    @classmethod
+    def get_command_from_xml(cls, xml_node):
+        command_name = xml_node.tagName
+        if command_name in cls.parsing_table.keys():
+            command = cls.parsing_table[command_name]()
+        else:
+            print "Generic parsing for command %s" % command_name
+            command = SyncMLCommand()
+        command.parse(xml_node)
+        return command
 
 class SyncMLMessage:
     def __init__(self, syncml_document):
@@ -64,9 +94,10 @@ class SyncMLMessage:
         self.sessionid        = int( get_child_text_by_name( header, "SessionID" ) )
         self.msgid            = int( get_child_text_by_name( header, "MsgID" ) )
         body = get_child_by_name( syncml_document, "SyncBody")
+
         self.commands = []
         for cmd in body.childNodes:
-            self.commands.append( SyncMLCommand(cmd) )
+            self.commands.append( SyncMLCommandFactory.get_command_from_xml(cmd) )
 
 class SyncMLSession:
     def __init__(self, id):
@@ -77,7 +108,7 @@ class SyncMLSession:
             self.handle_command(command)
 
     def handle_command(self, syncml_command):
-        print syncml_command.command
+        print syncml_command
 
 class SessionManager:
     """The session manager handles incoming messages and dispatches them to the
@@ -102,9 +133,9 @@ class SyncMLRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         recv_data = self.rfile.read(content_size)
         wxd = wbxml.WbXmlDocument()
         wxd.parse( recv_data )
-        package = SyncMLMessage( wxd.document.childNodes[0] )
-        print "Incoming Message with SessionID %u" % package.sessionid
-        self.server.sm.handle_message( package )
+        message = SyncMLMessage( wxd.document.childNodes[0] )
+        print "Incoming Message with SessionID %u" % message.sessionid
+        self.server.sm.handle_message( message )
 
         self.send_response(200)
         self.send_header("Connection", "close")
