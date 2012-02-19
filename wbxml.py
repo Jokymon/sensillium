@@ -58,6 +58,19 @@ def extractMultiByte(data):
         counter += 1
     return (value, data)
 
+def createMultiByte(value):
+    if (value<0 or value>2**32):
+        raise ValueError("Cannot convert %u into a multibyte string" % value)
+    s = ""
+    remainder = value
+    while remainder>0:
+        ch = remainder & 0x7f
+        remainder = remainder >> 7
+        if remainder>0:
+            ch |= 0x80
+        s += "%c" % ch
+    return s
+
 class WbXmlParser:
     """WBXML document parser implementation based on
     http://polylab.sfu.ca/spacesystems/teach/wireless/wap/documents/SPEC-WBXML-19991104.pdf"""
@@ -215,6 +228,31 @@ class WbXmlParser:
         data = f.read()
         f.close()
         self.parse(data)
+
+class WbXmlDocument:
+    def __init__(self, wbxmlversion=2, publicid="-//SYNCML//DTD SyncML 1.2//EN", charset="UTF-8"):
+        self.wbxmlversion = wbxmlversion
+        self.publicid = publicid
+        self.charset = charset
+
+    def write_xml_to_file(self, xml_root, outfile):
+        output = open(outfile, "wb")
+        output.write("%c" % self.wbxmlversion)
+        # for the moment the public ID is always index 0 in the string table
+        output.write("\0")
+        output.write( createMultiByte(0) )
+
+        # TODO: error handling for unknown, wrong or missing charset name
+        inv_MIBenum = dict((v, k) for k, v in MIBenum.iteritems())
+        output.write( createMultiByte(inv_MIBenum[self.charset]) )
+        self._write_strtbl(output)
+        output.close()
+
+    def _write_strtbl(self, out):
+        length = len(self.publicid) + 1 # account for the addtional \0 for string terminating
+        out.write( createMultiByte(length) )
+        out.write( self.publicid )
+        out.write("\0")
 
 def convert_to_lookup(c_table):
     lookup = {}     # each hash element represents a code page containing a lookup dictionary for the codes
