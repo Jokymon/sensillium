@@ -44,7 +44,7 @@ class SyncMLCommand:
         if self.command=="Put":
             item = get_child_by_name( xml_node, "Item" )
             data = get_child_by_name( item, "Data" )
-            wxd = wbxml.WbXmlDocument()
+            wxd = wbxml.WbXmlParser()
             wxd.parse( data.childNodes[0].data )
 
             ts = time.strftime("%Y%m%d-%H%M%S")
@@ -142,7 +142,7 @@ class SyncMLRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     def do_POST(self):
         content_size = int(self.headers["Content-Length"])
         recv_data = self.rfile.read(content_size)
-        wxd = wbxml.WbXmlDocument()
+        wxd = wbxml.WbXmlParser()
         wxd.parse( recv_data )
         message = SyncMLMessage( wxd.document.childNodes[0] )
         print "Incoming Message with SessionID %u" % message.sessionid

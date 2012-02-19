@@ -58,7 +58,7 @@ def extractMultiByte(data):
         counter += 1
     return (value, data)
 
-class WbXmlDocument:
+class WbXmlParser:
     """WBXML document parser implementation based on
     http://polylab.sfu.ca/spacesystems/teach/wireless/wap/documents/SPEC-WBXML-19991104.pdf"""
     def __init__(self):
@@ -228,7 +228,7 @@ if __name__=="__main__":
     assert extractMultiByte("\x81\x20")[0]==0xa0
 
     import sys
-    wxd = WbXmlDocument()
+    wxd = WbXmlParser()
     wxd.parse_file(sys.argv[1])
     print "Version:  %u" % wxd.version
     print "PublicId: %s" % int(wxd.publicid)
