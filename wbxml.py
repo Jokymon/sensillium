@@ -69,6 +69,8 @@ def createMultiByte(value):
         if remainder>0:
             ch |= 0x80
         s += "%c" % ch
+    if len(s)==0:
+        s = "\0"
     return s
 
 class WbXmlParser:
@@ -234,6 +236,9 @@ class WbXmlDocument:
         self.wbxmlversion = wbxmlversion
         self.publicid = publicid
         self.charset = charset
+        import wbxml_tables
+        self.tag_table = convert_to_reverse_lookup( wbxml_tables.tag_tables[publicid] )
+        self.code_page = 0
 
     def write_xml_to_file(self, xml_root, outfile):
         output = open(outfile, "wb")
@@ -243,16 +248,52 @@ class WbXmlDocument:
         output.write( createMultiByte(0) )
 
         # TODO: error handling for unknown, wrong or missing charset name
-        inv_MIBenum = dict((v, k) for k, v in MIBenum.iteritems())
+        import iana_charsets
+        inv_MIBenum = dict((v, k) for k, v in iana_charsets.MIBenum.iteritems())
         output.write( createMultiByte(inv_MIBenum[self.charset]) )
         self._write_strtbl(output)
+
+        self._convert_xml_node(xml_root, output)
+
         output.close()
 
     def _write_strtbl(self, out):
-        length = len(self.publicid) + 1 # account for the addtional \0 for string terminating
+        length = len(self.publicid)
         out.write( createMultiByte(length) )
         out.write( self.publicid )
-        out.write("\0")
+
+    def _convert_xml_node(self, xml_node, out):
+        if xml_node.nodeType==xml_node.ELEMENT_NODE:
+            self._convert_xml_element(xml_node, out)
+        elif xml_node.nodeType==xml_node.TEXT_NODE:
+            self._convert_xml_text_node(xml_node, out)
+        else:
+            print "Not converting unknown element type %u" % xml_node.nodeType
+
+    def _convert_xml_text_node(self, xml_text_node, out):
+        # we always insert text as inline
+        text = xml_text_node.data.strip()
+        if text!="":
+            out.write("\x03")   # STR_I
+            out.write(text)
+            out.write("\0")
+
+    def _convert_xml_element(self, xml_element, out):
+        (page, code) = self.tag_table[ xml_element.tagName ]
+        if page!=self.code_page:
+            out.write("\0%c" % page) # SWITCH_PAGE
+            self.code_page = page
+        if xml_element.hasAttributes():
+            code |= 0x80
+        if len( xml_element.childNodes ) > 0:
+            code |= 0x40
+        out.write("%c" % code)
+        # TODO: encode attributes
+        
+        if len( xml_element.childNodes ) > 0:
+            for child in xml_element.childNodes:
+                self._convert_xml_node(child, out)
+            out.write("\x01") # END code
 
 def convert_to_lookup(c_table):
     lookup = {}     # each hash element represents a code page containing a lookup dictionary for the codes
@@ -260,6 +301,12 @@ def convert_to_lookup(c_table):
         if not lookup.has_key(item[1]):
             lookup[item[1]] = {}
         lookup[item[1]][item[2]] = item[0]
+    return lookup
+
+def convert_to_reverse_lookup(c_table):
+    lookup = {}     # maps a tag to a code page/code number tuple
+    for item in c_table:
+        lookup[item[0]] = ( item[1], item[2] )
     return lookup
 
 if __name__=="__main__":
@@ -273,3 +320,7 @@ if __name__=="__main__":
     print "Charset:  %s" % wxd.charset
     print "Stringtable: %s" % wxd.stringtable
     print wxd.document.toprettyxml()
+
+    #xml = xdm.parse(sys.argv[1])
+    #wxd = WbXmlDocument()
+    #wxd.write_xml_to_file( xml.childNodes[0], "test.bin" )
